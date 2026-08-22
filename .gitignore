@@ -1,0 +1,11 @@
+.Rhistory
+.RData
+.Rproj.user/
+supervisor-logs/
+supervisor.lock
+*.log
+
+# Unrelated scratch/prototype files found in this folder - not part of the
+# 5 production R/Plumber services and not deployed.
+index.html
+R script 20

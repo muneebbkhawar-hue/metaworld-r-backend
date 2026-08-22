@@ -1,0 +1,78 @@
+# Render Blueprint - defines all 5 R/Plumber statistical services from one
+# file, so they can be created together via Render's "New Blueprint
+# Instance" flow instead of manually configuring 5 separate web services by
+# hand. All 5 share the SAME Dockerfile/image (see entrypoint.R) - only
+# R_SCRIPT differs per service.
+#
+# Free tier reality check (verified against Render's current published
+# limits, not assumed): each free web service gets 512MB RAM / 0.1 CPU and
+# sleeps after 15 minutes of inactivity, with a 30-60s cold start on the
+# next request. That's an acceptable trade-off for a research tool with
+# intermittent usage, but a genuinely poor fit for a high-traffic or
+# latency-sensitive deployment - upgrade the affected service's plan in the
+# Render dashboard if that becomes a problem.
+services:
+  - type: web
+    name: metaworld-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: R_SCRIPT
+        value: api.R
+      - key: ALLOWED_ORIGIN
+        sync: false # set to your production frontend origin(s) after the Vercel domain is known, comma-separated for multiple
+
+  - type: web
+    name: metaworld-tsa-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: R_SCRIPT
+        value: tsa-api.R
+      - key: ALLOWED_ORIGIN
+        sync: false
+
+  - type: web
+    name: metaworld-nma-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/nma/health # this service's health route predates the others and was kept as-is rather than renamed, to avoid breaking the frontend's existing reconnect-banner contract
+    envVars:
+      - key: R_SCRIPT
+        value: nma-api.R
+      - key: ALLOWED_ORIGIN
+        sync: false
+
+  - type: web
+    name: metaworld-metareg-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: R_SCRIPT
+        value: metareg-api.R
+      - key: ALLOWED_ORIGIN
+        sync: false
+
+  - type: web
+    name: metaworld-rob-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: R_SCRIPT
+        value: rob-api.R
+      - key: ALLOWED_ORIGIN
+        sync: false
