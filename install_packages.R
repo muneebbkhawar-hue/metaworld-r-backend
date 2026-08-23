@@ -12,7 +12,9 @@ packages <- c(
   "robvis",
   "ggplot2",
   "base64enc",
-  "svglite"
+  "svglite",
+  "IPDfromKM",   # km-digitizer-api.R - Guyot et al. 2012 KM reconstruction
+  "survival"     # km-digitizer-api.R - survfit()/Surv() for the validation summary
 )
 
 install.packages(packages)

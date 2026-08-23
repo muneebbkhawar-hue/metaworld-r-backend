@@ -76,3 +76,16 @@ services:
         value: rob-api.R
       - key: ALLOWED_ORIGIN
         sync: false
+
+  - type: web
+    name: metaworld-km-digitizer-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: R_SCRIPT
+        value: km-digitizer-api.R
+      - key: ALLOWED_ORIGIN
+        sync: false
