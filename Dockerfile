@@ -13,6 +13,13 @@ FROM rocker/r-ver:4.4.1
 # generation). Not guessed - this is the standard system dependency set for
 # this exact package combination (meta, metafor, netmeta, RTSA, robvis,
 # ggplot2, svglite) on Debian-based images.
+#
+# Discovered missing via a REAL failed Render build (not guessed up front):
+# `plumber` depends on the `sodium` R package, which needs libsodium-dev to
+# compile - without it, plumber itself fails to install and NOTHING can
+# start. Separately, `meta` depends on `lme4`, which depends on `nloptr`,
+# which needs `cmake` to build its bundled NLopt - without it, meta (and
+# therefore netmeta, which depends on meta) also fails to install.
 RUN apt-get update -qq && apt-get install -y --no-install-recommends \
     curl \
     libcurl4-openssl-dev \
@@ -26,6 +33,8 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends \
     libfontconfig1-dev \
     libharfbuzz-dev \
     libfribidi-dev \
+    libsodium-dev \
+    cmake \
     pandoc \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
@@ -41,7 +50,7 @@ RUN Rscript install_packages.R
 # scripts are copied into every image (they're small, plain-text R files)
 # so the SAME built image can serve any of the 5 services - only R_SCRIPT
 # differs between deployments, never the image itself.
-COPY api.R tsa-api.R nma-api.R metareg-api.R rob-api.R entrypoint.R /app/
+COPY api.R tsa-api.R nma-api.R metareg-api.R rob-api.R km-digitizer-api.R entrypoint.R /app/
 
 # Render (and most standard PaaS platforms) inject PORT at runtime and
 # expect the process to bind to it - entrypoint.R reads it via
