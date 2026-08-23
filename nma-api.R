@@ -7,13 +7,34 @@
 # =============================================================================
 library(plumber)
 library(jsonlite)
-library(netmeta)
-library(meta)
 library(base64enc)
-library(ggplot2)
-library(scales)
 
 STARTED_AT <- Sys.time()
+
+# netmeta pulls in a genuinely heavy dependency chain (igraph, Matrix, MASS,
+# mvtnorm, dplyr, ggplot2, colorspace, grid, magrittr, magic, plus meta ->
+# metabook) - loading all of that at top-level, before the server even
+# starts listening, was found in production to make Render's free-tier
+# instance (512MB RAM / 0.1 CPU) hang for 15+ minutes before its port-open
+# health check gave up, even though the eventual load would likely have
+# succeeded given enough time. Deferring the load to the first real request
+# lets the server bind its port and pass health checks in under a second
+# (the same as every other service in this project), at the cost of the
+# first NMA request after a cold start taking longer while these packages
+# load - a one-time, acceptable trade-off, and the SAME packages either
+# way, not a reduced feature set.
+.heavy_packages_loaded <- FALSE
+ensure_heavy_packages_loaded <- function() {
+  if (.heavy_packages_loaded) return(invisible())
+  suppressPackageStartupMessages({
+    library(netmeta)
+    library(meta)
+    library(ggplot2)
+    library(scales)
+  })
+  .heavy_packages_loaded <<- TRUE
+  invisible()
+}
 
 # Production CORS: restrict to the deployed frontend origin via the
 # ALLOWED_ORIGIN env var (comma-separated for multiple origins). Defaults to
@@ -208,6 +229,7 @@ arm_stats <- function(studies) {
 #* @parser json
 #* @post /api/nma/validate
 function(req, res) {
+  ensure_heavy_packages_loaded()
   tryCatch({
     body <- req$body
     if (is.null(body)) body <- fromJSON(req$postBody)
@@ -272,6 +294,7 @@ function(req, res) {
 #* @parser json
 #* @post /api/nma/analyze
 function(req, res) {
+  ensure_heavy_packages_loaded()
   tryCatch({
     body <- req$body
     if (is.null(body)) body <- fromJSON(req$postBody)
@@ -417,6 +440,7 @@ function(req, res) {
 #* @parser json
 #* @post /api/nma/diagnostics
 function(req, res) {
+  ensure_heavy_packages_loaded()
   tryCatch({
     body <- req$body
     if (is.null(body)) body <- fromJSON(req$postBody)
@@ -574,6 +598,7 @@ function(req, res) {
 #* @parser json
 #* @post /api/nma/funnel
 function(req, res) {
+  ensure_heavy_packages_loaded()
   tryCatch({
     body <- req$body
     if (is.null(body)) body <- fromJSON(req$postBody)
@@ -710,6 +735,7 @@ settings_block <- function(ctx, extra = list()) {
 #* @parser json
 #* @post /api/nma/sensitivity
 function(req, res) {
+  ensure_heavy_packages_loaded()
   tryCatch({
     body <- req$body
     if (is.null(body)) body <- fromJSON(req$postBody)
@@ -824,6 +850,7 @@ function(req, res) {
 #* @parser json
 #* @post /api/nma/subgroup
 function(req, res) {
+  ensure_heavy_packages_loaded()
   tryCatch({
     body <- req$body
     if (is.null(body)) body <- fromJSON(req$postBody)
@@ -909,6 +936,7 @@ function(req, res) {
 #* @parser json
 #* @post /api/nma/metaregression
 function(req, res) {
+  ensure_heavy_packages_loaded()
   tryCatch({
     body <- req$body
     if (is.null(body)) body <- fromJSON(req$postBody)
