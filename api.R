@@ -353,3 +353,96 @@ function(req) {
   m <- metagen(as.numeric(studies$te), as.numeric(studies$se), studlab=as.character(studies$study), sm="RR")
   create_advanced_funnel(m, studies, conf)
 }
+
+# --- GRADE Evidence Profile Assessment (Brozek et al., 2021) ---
+# NOTE: this logic previously existed only in the orphaned grade_api.R /
+# grade_engine.R files, which were never wired into entrypoint.R's R_SCRIPT
+# options nor render.yaml's service list nor sourced from here - so
+# /api/grade/evaluate did not actually exist on the deployed metaworld-api
+# service despite the frontend (app/tools/grade/page.tsx) calling it via
+# META_API_URL (this file's own service). Moved here, onto the service the
+# frontend already targets, fixing that gap. grade_engine.R's slightly more
+# complete rule set (modular assess_* functions, ois_threshold=300) was kept
+# over grade_api.R's near-duplicate inline version.
+grade_assess_inconsistency <- function(i2) {
+  rating <- if (i2 < 40) "Not serious" else if (i2 <= 75) "Serious" else "Very serious"
+  steps <- if (rating == "Serious") 1 else if (rating == "Very serious") 2 else 0
+  list(rating = rating, steps = steps)
+}
+
+grade_assess_indirectness <- function(override_rating = NULL) {
+  if (!is.null(override_rating) && override_rating != "") {
+    steps <- switch(override_rating, "Not serious" = 0, "Serious" = 1, "Very serious" = 2, 0)
+    return(list(rating = override_rating, steps = steps))
+  }
+  list(rating = "Not serious", steps = 0)
+}
+
+grade_assess_imprecision <- function(sample_size, ois_threshold = 300) {
+  if (sample_size < ois_threshold) return(list(rating = "Serious", steps = 1))
+  list(rating = "Not serious", steps = 0)
+}
+
+grade_calculate_certainty <- function(study_design, rob_rating, inconsistency_steps, indirectness_steps, imprecision_steps, pub_bias_rating) {
+  base_score <- switch(toupper(study_design), "RCT" = 4, "OBSERVATIONAL" = 2, "MODELING" = 3, 3)
+  rob_steps <- switch(rob_rating, "Not serious" = 0, "Serious" = 1, "Very serious" = 2, 0)
+  pub_steps <- switch(pub_bias_rating, "Undetected" = 0, "Suspected" = 1, "Serious" = 1, "Very serious" = 2, 0)
+  total_downgrades <- rob_steps + inconsistency_steps + indirectness_steps + imprecision_steps + pub_steps
+  final_score <- max(1, min(4, base_score - total_downgrades))
+  label <- switch(as.character(final_score),
+    "1" = "\u2295\u25EF\u25EF\u25EF Very low",
+    "2" = "\u2295\u2295\u25EF\u25EF Low",
+    "3" = "\u2295\u2295\u2295\u25EF Moderate",
+    "4" = "\u2295\u2295\u2295\u2295 High"
+  )
+  list(score = final_score, label = label)
+}
+
+#* @parser json
+#* @serializer unboxedJSON
+#* @post /api/grade/evaluate
+function(req, res) {
+  tryCatch({
+    body <- req$body
+    if (is.null(body)) body <- fromJSON(req$postBody)
+
+    outcome <- body$outcome
+    effect <- body$effect
+    k <- as.numeric(body$k)
+    n <- as.numeric(body$n)
+    i2 <- as.numeric(body$i2)
+    rob <- body$risk_of_bias
+    pub_bias <- body$publication_bias
+    study_design <- body$study_design
+    indirectness_override <- if (!is.null(body$indirectness_override)) body$indirectness_override else NULL
+
+    inc <- grade_assess_inconsistency(i2)
+    ind <- grade_assess_indirectness(indirectness_override)
+    imp <- grade_assess_imprecision(n, ois_threshold = 300)
+    cert <- grade_calculate_certainty(study_design, rob, inc$steps, ind$steps, imp$steps, pub_bias)
+
+    res$status <- 200
+    list(
+      status = "success",
+      row = list(
+        outcome = outcome,
+        effect_ci = effect,
+        k = k,
+        n = n,
+        risk_of_bias = rob,
+        inconsistency = inc$rating,
+        indirectness = ind$rating,
+        imprecision = imp$rating,
+        publication_bias = pub_bias,
+        certainty = cert$label
+      )
+    )
+  }, error = function(e) {
+    res$status <- 200
+    msg <- as.character(e$message)
+    log_line <- paste0("[", format(Sys.time()), "] GRADE-EVALUATE CAUGHT ERROR: ", msg,
+                        " | raw body: ", tryCatch(req$postBody, error = function(e2) "<unavailable>"))
+    try(cat(log_line, "\n", file = "C:/Users/munee/OneDrive/Desktop/metaworld-r-backend/error.log", append = TRUE), silent = TRUE)
+    list(status = "error", message = msg)
+  })
+}
