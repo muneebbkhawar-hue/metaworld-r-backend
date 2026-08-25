@@ -14,7 +14,8 @@ packages <- c(
   "base64enc",
   "svglite",
   "IPDfromKM",   # km-digitizer-api.R - Guyot et al. 2012 KM reconstruction
-  "survival"     # km-digitizer-api.R - survfit()/Surv() for the validation summary
+  "survival",    # km-digitizer-api.R - survfit()/Surv() for the validation summary
+  "mada"         # dta-api.R - bivariate/SROC diagnostic test accuracy meta-analysis (Reitsma et al. 2005)
 )
 
 install.packages(packages)

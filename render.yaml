@@ -89,3 +89,16 @@ services:
         value: km-digitizer-api.R
       - key: ALLOWED_ORIGIN
         sync: false
+
+  - type: web
+    name: metaworld-dta-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: R_SCRIPT
+        value: dta-api.R
+      - key: ALLOWED_ORIGIN
+        sync: false
