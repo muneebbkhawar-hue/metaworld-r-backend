@@ -127,9 +127,16 @@ function(req, res) {
 
     loo <- if (is_random) metainf(m, pooled = "random") else metainf(m, pooled = "common")
     plot_file <- tempfile(fileext = ".png")
-    png(plot_file, width = 2800, height = max(1200, 250 + length(m$studlab) * 55), res = 200, pointsize = 11)
+    # +50px baseline vs. before, matching the main forest endpoint, to leave
+    # room for the "Test for overall effect" line added below.
+    png(plot_file, width = 2800, height = max(1200, 300 + length(m$studlab) * 55), res = 200, pointsize = 11)
     par(mar = c(5, 5, 4, 2) + 0.1)
-    forest(loo)
+    # Bakes "Test for overall effect: Z = .. (P = ..)" directly into the LOO
+    # plot image for the pooled (all-studies) estimate, RevMan style, same
+    # as the main forest plot tool. addrows.below.overall reserves a blank
+    # row so the text doesn't overlap the x-axis line/reference line, which
+    # forest.metainf does not otherwise leave room for.
+    forest(loo, test.overall = TRUE, addrows.below.overall = 2)
     dev.off()
 
     is_ratio <- sm_val %in% c("RR", "OR", "HR")
