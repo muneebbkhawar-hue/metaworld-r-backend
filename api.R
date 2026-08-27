@@ -64,6 +64,30 @@ get_eff <- function(m, is_random, prop) {
   return(m[[prop]])
 }
 
+# --- Test for overall effect (RevMan-style: "Z = .. (P = ..)") -------------
+# Mirrors get_eff()'s own is_random-aware field lookup above, since which
+# model (random vs. common) the Z/P-value should come from depends on which
+# model the user selected/is being plotted - not hardcoded to one. meta's
+# field naming has changed across versions (".common" in current releases,
+# ".fixed" in older ones) - checking both, exactly like get_eff() already
+# does, keeps this working regardless of the installed meta version.
+get_overall_stat <- function(m, is_random, prop) {
+  if (is_random) return(m[[paste0(prop, ".random")]])
+  val <- m[[paste0(prop, ".common")]]
+  if (is.null(val)) val <- m[[paste0(prop, ".fixed")]]
+  val
+}
+overall_effect_stats <- function(m, is_random) {
+  z <- suppressWarnings(as.numeric(get_overall_stat(m, is_random, "zval")))
+  p <- suppressWarnings(as.numeric(get_overall_stat(m, is_random, "pval")))
+  list(
+    z_overall = if (length(z) == 0 || is.na(z)) NA else round(z, 2),
+    # format.pval matches RevMan's own display convention ("P = 0.53", or
+    # "P < 0.00001" for a very small p-value instead of misleading rounding to 0).
+    pval_overall = if (length(p) == 0 || is.na(p)) NA else format.pval(p, digits = 2, eps = 0.00001)
+  )
+}
+
 safe_array <- function(x) {
   val <- suppressWarnings(as.character(x))
   val[is.na(val) | val == "NaN" | val == "Inf" | val == "-Inf"] <- "NA"
@@ -177,6 +201,7 @@ function(req) {
   plot_file <- tempfile(fileext = ".png")
   generate_custom_forest(m, plot_file, e_lab, c_lab, conf)
 
+  ov <- overall_effect_stats(m, is_random)
   list(
     forest_plot_base64 = paste0("data:image/png;base64,", base64encode(plot_file)),
     stats = list(
@@ -184,7 +209,9 @@ function(req) {
       i2 = round(m$I2 * 100, 1),
       tau2 = round(m$tau2, 4),
       q = round(m$Q, 2),
-      q_pval = round(m$pval.Q, 4)
+      q_pval = round(m$pval.Q, 4),
+      z_overall = ov$z_overall,
+      pval_overall = ov$pval_overall
     )
   )
 }
@@ -219,6 +246,7 @@ function(req) {
   plot_file <- tempfile(fileext = ".png")
   generate_custom_forest(m, plot_file, e_lab, c_lab, conf)
 
+  ov <- overall_effect_stats(m, is_random)
   list(
     forest_plot_base64 = paste0("data:image/png;base64,", base64encode(plot_file)),
     stats = list(
@@ -226,7 +254,9 @@ function(req) {
       i2 = round(m$I2 * 100, 1),
       tau2 = round(m$tau2, 4),
       q = round(m$Q, 2),
-      q_pval = round(m$pval.Q, 4)
+      q_pval = round(m$pval.Q, 4),
+      z_overall = ov$z_overall,
+      pval_overall = ov$pval_overall
     )
   )
 }
@@ -257,6 +287,7 @@ function(req) {
   plot_file <- tempfile(fileext = ".png")
   generate_custom_forest(m, plot_file, "Experimental", "Control", conf)
 
+  ov <- overall_effect_stats(m, is_random)
   list(
     forest_plot_base64 = paste0("data:image/png;base64,", base64encode(plot_file)),
     stats = list(
@@ -264,7 +295,9 @@ function(req) {
       i2 = round(m$I2 * 100, 1),
       tau2 = round(m$tau2, 4),
       q = round(m$Q, 2),
-      q_pval = round(m$pval.Q, 4)
+      q_pval = round(m$pval.Q, 4),
+      z_overall = ov$z_overall,
+      pval_overall = ov$pval_overall
     )
   )
 }
