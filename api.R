@@ -149,7 +149,9 @@ function(req, res) {
 
 # --- UNIFIED FOREST PLOT GENERATOR ---
 generate_custom_forest <- function(m, plot_file, e_lab, c_lab, config) {
-  png(plot_file, width = 2800, height = max(1200, 250 + length(m$studlab) * 55), res = 200, pointsize = 11)
+  # +50px baseline vs. before to leave room for the "Test for overall
+  # effect" line(s) now printed below the heterogeneity stats (RevMan style).
+  png(plot_file, width = 2800, height = max(1200, 300 + length(m$studlab) * 55), res = 200, pointsize = 11)
   par(mar = c(5, 5, 4, 2) + 0.1)
 
   # Extract options from config
@@ -166,7 +168,11 @@ generate_custom_forest <- function(m, plot_file, e_lab, c_lab, config) {
          lab.c = c_lab,
          prediction = show_pi,
          level = ci_lvl,
-         spacing = 1.3)
+         spacing = 1.3,
+         # Bakes "Test for overall effect: Z = .. (P = ..)" directly into the
+         # plot image (RevMan style), for whichever model(s) are active -
+         # meta's own formatting/rounding, not a hand-rolled duplicate.
+         test.overall = TRUE)
   dev.off()
 }
 
