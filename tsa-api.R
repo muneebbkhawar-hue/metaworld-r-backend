@@ -188,17 +188,66 @@ function(req, res) {
     # reuse them directly instead of re-deriving anything) ------------------
     rdf <- result$results$results_df
     k <- nrow(rtsa_data)
-    z_col <- if (fixed) rdf$z_fixed[1:k] else rdf$z_random[1:k]
-    upper_col <- rdf$upper[1:k]
-    lower_col <- rdf$lower[1:k]
-    fut_upper_col <- rdf$fut_upper[1:k]
-    fut_lower_col <- rdf$fut_lower[1:k]
+    # BUG FIX: results_df is NOT guaranteed to have exactly k rows in 1:1
+    # order with the k studies - RTSA inserts an additional synthetic
+    # interpolation row (with no real cumulative Z-value) at the point the
+    # monitoring boundary/RIS is crossed, positioned by information
+    # fraction, not appended at the end. The previous code always read rows
+    # 1:k positionally, which silently substituted that synthetic row for
+    # the LAST real study whenever RTSA inserted one before the final study
+    # - e.g. with 3 real studies, this reads rows 1,2,3 while the true 3rd
+    # study's cumulative Z actually landed in row 4 (row 3 being the
+    # synthetic one, with z_fixed/z_random = NA). That NA silently dropped
+    # the last study from the plotted Z-curve and study labels while AIS/
+    # cum_n (computed independently from the raw input data, not from
+    # results_df) still correctly included it - exactly the "only shows N-1
+    # trials" symptom this was written to fix. The synthetic row is
+    # reliably identifiable because it alone has no observed Z-value: a
+    # real cumulative-analysis row always has one. Filter to rows with a
+    # non-NA Z instead of trusting row position/count.
+    z_field <- if (fixed) rdf$z_fixed else rdf$z_random
+    study_rows <- which(!is.na(z_field))
+    if (length(study_rows) != k) {
+      stop(paste0(
+        "Internal error reconciling RTSA's results with the ", k, " input studies: found ",
+        length(study_rows), " result row(s) with an observed cumulative Z-value instead of ", k,
+        ". This can happen with unusual boundary-crossing patterns - please report this dataset so it can be investigated rather than silently showing possibly-misaligned results."
+      ))
+    }
+    z_col <- z_field[study_rows]
+    upper_col <- rdf$upper[study_rows]
+    lower_col <- rdf$lower[study_rows]
+    fut_upper_col <- rdf$fut_upper[study_rows]
+    fut_lower_col <- rdf$fut_lower[study_rows]
     cum_n <- cumsum(rtsa_data$nI + rtsa_data$nC)
     ais <- result$results$AIS
+    # RTSA's own RIS field selection (bug fix): for a random-effects design,
+    # the heterogeneity-adjusted field is SMA_HARIS - but RTSA itself
+    # deliberately sets SMA_HARIS to NULL whenever the data show no material
+    # heterogeneity for the requested adjustment (e.g. D2/I2 ~ 0%), because
+    # there is then nothing to heterogeneity-adjust; it silently falls back
+    # to its own plain (still sequentially-adjusted) SMA_RIS internally in
+    # that case. The previous version of this endpoint always read
+    # SMA_HARIS for random-effects models and reported "RIS unavailable"
+    # whenever it came back NULL - which happens for EVERY random-effects
+    # run on near-zero-heterogeneity data (the common case for a
+    # well-conducted meta-analysis), even though a perfectly valid RIS
+    # (SMA_RIS) was available the whole time. Mirror RTSA's own fallback
+    # instead of reporting unavailable.
     ris_raw <- if (!fixed) result$results$SMA_HARIS else result$results$SMA_RIS
+    ris_is_diversity_adjusted <- !fixed && !is.null(ris_raw) && !(length(ris_raw) == 1 && is.na(ris_raw))
+    if (is.null(ris_raw) || (length(ris_raw) == 1 && is.na(ris_raw))) {
+      ris_raw <- result$results$SMA_RIS
+    }
     ris <- if (length(ris_raw) == 1 && !is.na(ris_raw)) as.numeric(ris_raw) else NA
     ris_unavailable <- is.na(ris)
-    ris_label <- if (!fixed) "SMA-adjusted Diversity/Heterogeneity Adjusted RIS (HARIS)" else "Sequentially-adjusted Required Information Size (RIS)"
+    ris_label <- if (ris_is_diversity_adjusted) {
+      "SMA-adjusted Diversity/Heterogeneity Adjusted RIS (HARIS)"
+    } else if (!fixed) {
+      "Required Information Size (RIS) - not diversity-adjusted, because this data showed no material heterogeneity (D²/I² near 0%) for the adjustment to apply"
+    } else {
+      "Sequentially-adjusted Required Information Size (RIS)"
+    }
     info_fraction <- if (!ris_unavailable && ris > 0) ais / ris else NA
     d2_val <- tryCatch(as.numeric(result$results$metaanalysis$hete_results$hete_est$D.2), error = function(e) NA)
 
