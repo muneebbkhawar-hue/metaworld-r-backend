@@ -288,10 +288,19 @@ function(req) {
   is_random <- conf$model == "Random-effects"
   ci_level_val <- as.numeric(conf$ci_level) / 100
   hk_val <- if(conf$inference == "Knapp-Hartung") "hk" else "classic"
+  # BUG FIX: this previously hardcoded sm = "RR" regardless of the
+  # frontend's "Generic Effect Type" selection (HR/RR/OR/GEN) - every
+  # generic inverse-variance forest plot was labeled "Risk Ratio" even when
+  # pooling log(HR) or log(OR) data. meta::metagen()/forest() already knows
+  # how to label and back-transform "HR" and "OR" correctly (verified
+  # directly against the `meta` package - forest() prints "Hazard Ratio"/
+  # "HR"/"lnHR" when sm="HR" is actually passed), so this only needed to
+  # stop discarding the value the frontend already sent.
+  sm_val <- if (!is.null(conf$effect_measure) && conf$effect_measure != "") conf$effect_measure else "RR"
 
   m <- metagen(TE = as.numeric(studies$te), seTE = as.numeric(studies$se),
                studlab = as.character(studies$study),
-               sm = "RR",
+               sm = sm_val,
                random = is_random,
                method.tau = conf$tau_estimator,
                method.random.ci = hk_val,
@@ -396,7 +405,10 @@ function(req) {
   studies <- as.data.frame(body$studies)
   conf <- body$config
 
-  m <- metagen(as.numeric(studies$te), as.numeric(studies$se), studlab=as.character(studies$study), sm="RR")
+  # Same fix as /api/meta/iv above - was hardcoded to sm="RR" regardless of
+  # what effect measure the data actually represents.
+  sm_val <- if (!is.null(conf$effect_measure) && conf$effect_measure != "") conf$effect_measure else "RR"
+  m <- metagen(as.numeric(studies$te), as.numeric(studies$se), studlab=as.character(studies$study), sm=sm_val)
   create_advanced_funnel(m, studies, conf)
 }
 
