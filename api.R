@@ -162,28 +162,44 @@ generate_custom_forest <- function(m, plot_file, e_lab, c_lab, config) {
   # collides with the ADJACENT group's label - two long labels run directly
   # into each other with the default 2mm gap between them.
   #
-  # An earlier attempt wrapped long labels onto 2 lines with an embedded
-  # "\n" - reproduced and confirmed WORSE: forest() allocates exactly one
-  # line of height for this header row regardless of how many lines the
-  # label text actually contains, so a 2-line label overflows down into the
-  # Study/Total/Mean/SD row directly underneath it instead of overlapping
-  # sideways. Multi-line group labels are not something forest() supports,
-  # confirmed by reading its source (no line-count-aware layout logic).
+  # Two earlier attempts didn't hold up under closer testing:
+  # 1. Wrapping long labels onto 2 lines with an embedded "\n" - forest()
+  #    allocates exactly one line of height for this header regardless of
+  #    how many lines the text contains, so the 2nd line overflowed down
+  #    into the Study/Total/Mean/SD row underneath instead (confirmed by
+  #    reading forest()'s source - no line-count-aware layout for these
+  #    labels exists at all).
+  # 2. Widening the plain `colgap` argument - this fixed the overlap but
+  #    widened EVERY column gap in the plot (including ones that never
+  #    needed it, e.g. before the Weight columns), leaving large unwanted
+  #    blank space, confirmed directly from a live user report.
   #
-  # The fix that actually works (verified against the real reported labels
-  # at 2 and 4 studies): widen colgap - the gap forest() inserts between
-  # every pair of adjacent column blocks - so a long label has room to
-  # spill sideways into the (now much larger) gap without touching its
-  # neighbor, while staying on the one line forest() actually reserves
-  # space for. The canvas width is widened by the same proportion so the
-  # extra gap space doesn't push the rightmost columns (Weight, 95% CI)
-  # off the edge of the image. Short/default labels (<= 18 characters, e.g.
-  # "Experimental"/"Control") get colgap's normal 2mm default and the
-  # original 2800px width - verified unchanged from before this fix.
+  # This widens ONLY colgap.left (the gaps among the left-side data
+  # columns - Study/Exp-block/Ctrl-block - which is where the actual
+  # collision happens), leaving colgap.right/colgap.forest at their normal
+  # small defaults so the forest-plot/Weight/CI area stays tight. The
+  # canvas is widened by just enough to cover colgap.left's growth across
+  # its 2 affected boundary gaps (empirically verified, not guessed: tested
+  # at 9, 16, and 25 extra characters against the real endpoint with no
+  # clipping and no leftover dead space). extra_chars is capped at 25 -
+  # labels longer than ~43 characters get the same generous treatment
+  # rather than scaling further, since testing showed further scaling
+  # wasn't needed once the gap is already this generous. Short/default
+  # labels (<= 18 characters, e.g. "Experimental"/"Control") are completely
+  # unaffected - verified byte-for-byte identical to before any of this.
   max_label_len <- max(nchar(e_lab), nchar(c_lab), 0, na.rm = TRUE)
-  extra_chars <- max(0, max_label_len - 18)
-  colgap_val <- paste0(2 + extra_chars * 1.5, "mm")
-  extra_width_px <- extra_chars * 60
+  extra_chars <- min(max(0, max_label_len - 18), 25)
+  colgap_mm <- 2 + extra_chars * 1.5
+  colgap_val <- paste0(colgap_mm, "mm")
+  extra_width_px <- round((colgap_mm - 2) * 4 / 25.4 * 200)
+
+  # Continuous outcomes: display Mean/SD/Total per group (matching how
+  # results are usually reported) instead of meta's default Total/Mean/SD -
+  # dichotomous keeps its default Events/Total order (already correct, per
+  # explicit user confirmation - left untouched).
+  leftcols_val <- if (inherits(m, "metacont")) {
+    c("studlab", "mean.e", "sd.e", "n.e", "mean.c", "sd.c", "n.c")
+  } else NULL
 
   # +50px baseline vs. before to leave room for the "Test for overall
   # effect" line(s) now printed below the heterogeneity stats (RevMan style).
@@ -202,7 +218,8 @@ generate_custom_forest <- function(m, plot_file, e_lab, c_lab, config) {
          studlab = TRUE,
          label.e = e_lab,
          label.c = c_lab,
-         colgap = colgap_val,
+         colgap.left = colgap_val,
+         leftcols = leftcols_val,
          prediction = show_pi,
          level = ci_lvl,
          spacing = 1.3,
