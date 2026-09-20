@@ -154,30 +154,40 @@ function(req, res) {
   })
 }
 
-# Wraps a long experimental/control group label onto exactly 2 lines,
-# split at whichever space is closest to the midpoint - never more than 2
-# lines, since meta::forest() does not reserve extra vertical space for a
-# 3+ line group header and will overlap it with the row below. Short
-# labels (<= threshold) are returned unchanged - this only kicks in for
-# labels long enough to actually overlap the ADJACENT group's label, which
-# is the bug this fixes (verified directly: two group labels around 20+
-# characters each, side by side, run into each other with no wrapping at
-# all since forest() centers each one over its own column block without
-# checking for a collision with its neighbor).
-wrap_group_label <- function(label, threshold = 18) {
-  if (is.null(label) || is.na(label) || nchar(label) <= threshold) return(label)
-  spaces <- gregexpr(" ", label)[[1]]
-  if (spaces[1] == -1) return(label) # single long word, nothing to split on
-  mid <- nchar(label) / 2
-  split_at <- spaces[which.min(abs(spaces - mid))]
-  paste0(substr(label, 1, split_at - 1), "\n", substr(label, split_at + 1, nchar(label)))
-}
-
 # --- UNIFIED FOREST PLOT GENERATOR ---
 generate_custom_forest <- function(m, plot_file, e_lab, c_lab, config) {
+  # Long custom experimental/control group names (e.g. "da Vinci Single-Port
+  # system") are wider than the Total/Mean/SD column block meta::forest()
+  # centers each label over, and forest() never checks whether that label
+  # collides with the ADJACENT group's label - two long labels run directly
+  # into each other with the default 2mm gap between them.
+  #
+  # An earlier attempt wrapped long labels onto 2 lines with an embedded
+  # "\n" - reproduced and confirmed WORSE: forest() allocates exactly one
+  # line of height for this header row regardless of how many lines the
+  # label text actually contains, so a 2-line label overflows down into the
+  # Study/Total/Mean/SD row directly underneath it instead of overlapping
+  # sideways. Multi-line group labels are not something forest() supports,
+  # confirmed by reading its source (no line-count-aware layout logic).
+  #
+  # The fix that actually works (verified against the real reported labels
+  # at 2 and 4 studies): widen colgap - the gap forest() inserts between
+  # every pair of adjacent column blocks - so a long label has room to
+  # spill sideways into the (now much larger) gap without touching its
+  # neighbor, while staying on the one line forest() actually reserves
+  # space for. The canvas width is widened by the same proportion so the
+  # extra gap space doesn't push the rightmost columns (Weight, 95% CI)
+  # off the edge of the image. Short/default labels (<= 18 characters, e.g.
+  # "Experimental"/"Control") get colgap's normal 2mm default and the
+  # original 2800px width - verified unchanged from before this fix.
+  max_label_len <- max(nchar(e_lab), nchar(c_lab), 0, na.rm = TRUE)
+  extra_chars <- max(0, max_label_len - 18)
+  colgap_val <- paste0(2 + extra_chars * 1.5, "mm")
+  extra_width_px <- extra_chars * 60
+
   # +50px baseline vs. before to leave room for the "Test for overall
   # effect" line(s) now printed below the heterogeneity stats (RevMan style).
-  png(plot_file, width = 2800, height = max(1200, 300 + length(m$studlab) * 55), res = 200, pointsize = 11)
+  png(plot_file, width = 2800 + extra_width_px, height = max(1200, 300 + length(m$studlab) * 55), res = 200, pointsize = 11)
   par(mar = c(5, 5, 4, 2) + 0.1)
 
   # Extract options from config
@@ -190,8 +200,9 @@ generate_custom_forest <- function(m, plot_file, e_lab, c_lab, config) {
          print.I2 = TRUE,
          print.tau2 = TRUE,
          studlab = TRUE,
-         label.e = wrap_group_label(e_lab),
-         label.c = wrap_group_label(c_lab),
+         label.e = e_lab,
+         label.c = c_lab,
+         colgap = colgap_val,
          prediction = show_pi,
          level = ci_lvl,
          spacing = 1.3,
