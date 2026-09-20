@@ -154,6 +154,25 @@ function(req, res) {
   })
 }
 
+# Wraps a long experimental/control group label onto exactly 2 lines,
+# split at whichever space is closest to the midpoint - never more than 2
+# lines, since meta::forest() does not reserve extra vertical space for a
+# 3+ line group header and will overlap it with the row below. Short
+# labels (<= threshold) are returned unchanged - this only kicks in for
+# labels long enough to actually overlap the ADJACENT group's label, which
+# is the bug this fixes (verified directly: two group labels around 20+
+# characters each, side by side, run into each other with no wrapping at
+# all since forest() centers each one over its own column block without
+# checking for a collision with its neighbor).
+wrap_group_label <- function(label, threshold = 18) {
+  if (is.null(label) || is.na(label) || nchar(label) <= threshold) return(label)
+  spaces <- gregexpr(" ", label)[[1]]
+  if (spaces[1] == -1) return(label) # single long word, nothing to split on
+  mid <- nchar(label) / 2
+  split_at <- spaces[which.min(abs(spaces - mid))]
+  paste0(substr(label, 1, split_at - 1), "\n", substr(label, split_at + 1, nchar(label)))
+}
+
 # --- UNIFIED FOREST PLOT GENERATOR ---
 generate_custom_forest <- function(m, plot_file, e_lab, c_lab, config) {
   # +50px baseline vs. before to leave room for the "Test for overall
@@ -171,8 +190,8 @@ generate_custom_forest <- function(m, plot_file, e_lab, c_lab, config) {
          print.I2 = TRUE,
          print.tau2 = TRUE,
          studlab = TRUE,
-         lab.e = e_lab,
-         lab.c = c_lab,
+         label.e = wrap_group_label(e_lab),
+         label.c = wrap_group_label(c_lab),
          prediction = show_pi,
          level = ci_lvl,
          spacing = 1.3,
