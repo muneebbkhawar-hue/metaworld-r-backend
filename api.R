@@ -179,16 +179,27 @@ generate_custom_forest <- function(m, plot_file, e_lab, c_lab, config) {
   # collision happens), leaving colgap.right/colgap.forest at their normal
   # small defaults so the forest-plot/Weight/CI area stays tight. The
   # canvas is widened by just enough to cover colgap.left's growth across
-  # its 2 affected boundary gaps (empirically verified, not guessed: tested
-  # at 9, 16, and 25 extra characters against the real endpoint with no
-  # clipping and no leftover dead space). extra_chars is capped at 25 -
-  # labels longer than ~43 characters get the same generous treatment
-  # rather than scaling further, since testing showed further scaling
-  # wasn't needed once the gap is already this generous. Short/default
-  # labels (<= 18 characters, e.g. "Experimental"/"Control") are completely
-  # unaffected - verified byte-for-byte identical to before any of this.
+  # its 2 affected boundary gaps. extra_chars is capped at 25 - labels
+  # longer than ~37 characters get the same generous treatment rather than
+  # scaling further, since testing showed further scaling wasn't needed
+  # once the gap is already this generous. Labels at or below "Experimental"
+  # (12 chars) are completely unaffected - verified byte-for-byte identical
+  # to before any of this.
+  #
+  # BUG FIX: the baseline this threshold is measured against was originally
+  # 18 chars, on the assumption that overlap only happens for genuinely
+  # long labels (e.g. "da Vinci Single-Port system", 27 chars). A real
+  # dataset with "Transfused"/"Non-Transfused" (10/14 chars) proved that
+  # assumption wrong - 14 chars is enough to overlap when the underlying
+  # Events/Total columns are narrow (small numbers), and the old formula
+  # gave this case zero extra gap. Lowered the baseline to 12 (the longest
+  # default label, "Experimental") so this range is covered too - verified
+  # against the real endpoint for "Transfused"/"Non-Transfused" (clean at
+  # the resulting 5mm), the original da Vinci case (clean at the resulting
+  # 24.5mm, same as the old formula's ballpark), and default labels
+  # (unchanged at 2mm).
   max_label_len <- max(nchar(e_lab), nchar(c_lab), 0, na.rm = TRUE)
-  extra_chars <- min(max(0, max_label_len - 18), 25)
+  extra_chars <- min(max(0, max_label_len - 12), 25)
   colgap_mm <- 2 + extra_chars * 1.5
   colgap_val <- paste0(colgap_mm, "mm")
   extra_width_px <- round((colgap_mm - 2) * 4 / 25.4 * 200)
