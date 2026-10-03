@@ -204,14 +204,6 @@ generate_custom_forest <- function(m, plot_file, e_lab, c_lab, config) {
   colgap_val <- paste0(colgap_mm, "mm")
   extra_width_px <- round((colgap_mm - 2) * 4 / 25.4 * 200)
 
-  # Continuous outcomes: display Mean/SD/Total per group (matching how
-  # results are usually reported) instead of meta's default Total/Mean/SD -
-  # dichotomous keeps its default Events/Total order (already correct, per
-  # explicit user confirmation - left untouched).
-  leftcols_val <- if (inherits(m, "metacont")) {
-    c("studlab", "mean.e", "sd.e", "n.e", "mean.c", "sd.c", "n.c")
-  } else NULL
-
   # +50px baseline vs. before to leave room for the "Test for overall
   # effect" line(s) now printed below the heterogeneity stats (RevMan style).
   png(plot_file, width = 2800 + extra_width_px, height = max(1200, 300 + length(m$studlab) * 55), res = 200, pointsize = 11)
@@ -221,23 +213,50 @@ generate_custom_forest <- function(m, plot_file, e_lab, c_lab, config) {
   show_pi <- !is.null(config$prediction_interval) && config$prediction_interval == "ON"
   ci_lvl <- if(!is.null(config$ci_level)) as.numeric(config$ci_level)/100 else 0.95
 
-  forest(m,
-         col.diamond = "black",
-         col.square = "blue",
-         print.I2 = TRUE,
-         print.tau2 = TRUE,
-         studlab = TRUE,
-         label.e = e_lab,
-         label.c = c_lab,
-         colgap.left = colgap_val,
-         leftcols = leftcols_val,
-         prediction = show_pi,
-         level = ci_lvl,
-         spacing = 1.3,
-         # Bakes "Test for overall effect: Z = .. (P = ..)" directly into the
-         # plot image (RevMan style), for whichever model(s) are active -
-         # meta's own formatting/rounding, not a hand-rolled duplicate.
-         test.overall = TRUE)
+  forest_args <- list(
+    x = m,
+    col.diamond = "black",
+    col.square = "blue",
+    print.I2 = TRUE,
+    print.tau2 = TRUE,
+    studlab = TRUE,
+    label.e = e_lab,
+    label.c = c_lab,
+    colgap.left = colgap_val,
+    prediction = show_pi,
+    level = ci_lvl,
+    spacing = 1.3,
+    # Bakes "Test for overall effect: Z = .. (P = ..)" directly into the
+    # plot image (RevMan style), for whichever model(s) are active -
+    # meta's own formatting/rounding, not a hand-rolled duplicate.
+    test.overall = TRUE
+  )
+
+  # Continuous outcomes: display Mean/SD/Total per group (matching how
+  # results are usually reported) instead of meta's default Total/Mean/SD -
+  # dichotomous keeps its default Events/Total order (already correct, per
+  # explicit user confirmation - left untouched).
+  #
+  # BUG FIX: `leftcols` must be left OUT of the call entirely for every
+  # other data type (dichotomous, generic inverse variance), not passed as
+  # `leftcols = NULL`. forest() checks `missing(leftcols)` internally to
+  # decide its row-layout math, so an explicit NULL takes a different
+  # internal code path than omitting the argument - even though both
+  # "mean no override" to a caller. That path shrinks the vertical space
+  # reserved for the annotation lines below the plot (heterogeneity +
+  # "Test for overall effect"), so with few studies the axis tick labels
+  # end up drawn on top of the last annotation line instead of below it.
+  # do.call with a conditionally-built args list is how you call a
+  # function with an argument sometimes present and sometimes genuinely
+  # absent - a plain `leftcols = if(...) ... else NULL` can't express that
+  # distinction. Verified against the real endpoint: this alone fixes the
+  # overlap for the generic inverse variance / dichotomous case and the
+  # continuous case still renders its Mean/SD/Total columns correctly.
+  if (inherits(m, "metacont")) {
+    forest_args$leftcols <- c("studlab", "mean.e", "sd.e", "n.e", "mean.c", "sd.c", "n.c")
+  }
+
+  do.call(forest, forest_args)
   dev.off()
 }
 
