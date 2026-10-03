@@ -364,7 +364,10 @@ function(req, res) {
     plot_width <- max(13, 9 + n_studies * 0.22)
     plot_height <- max(9, 7 + n_studies * 0.05)
     plot_file <- tempfile(fileext = ".png")
-    ggplot2::ggsave(plot_file, plot = p, width = plot_width, height = plot_height, dpi = 300, bg = "white", limitsize = FALSE)
+    # 150 dpi (not 300): a 300-dpi plot for 10+ studies is ~3900x2700 px, which the
+    # browser decodes to ~40 MB per image; several opened outcomes exhausted the
+    # renderer. It also cuts render time and RAM on the free Render tier.
+    ggplot2::ggsave(plot_file, plot = p, width = plot_width, height = plot_height, dpi = 150, bg = "white", limitsize = FALSE)
 
     interpretation <- if (any(crossed_benefit, na.rm = TRUE)) {
       "The cumulative Z-curve crossed the trial sequential monitoring boundary for benefit before the required information size was reached."
