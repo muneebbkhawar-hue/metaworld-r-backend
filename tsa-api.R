@@ -119,6 +119,38 @@ function(req, res) {
 
     rtsa_data <- build_rtsa_data(studies, outcome_type)
 
+    # BUG FIX: RTSA itself silently drops any dichotomous study with zero
+    # events in BOTH arms when the outcome is a ratio measure (RR/OR) - such
+    # a study contributes no information to a ratio and RTSA's own internal
+    # meta-analysis step excludes it (confirmed by reading RTSA:::RTSA's
+    # source: it removes rows where eI + eC == 0 and warns "All zero-event
+    # studies ... are removed"). Every downstream count in this endpoint (k,
+    # cum_n, the study-label vector) was still computed from the ORIGINAL,
+    # unfiltered study list, so whenever a dataset had such a study, RTSA's
+    # result rows (now one short) silently fell out of sync with k - the
+    # exact "found N-1 result row(s) instead of N" error this endpoint's own
+    # reconciliation check (below) was written to catch rather than mask.
+    # Filtering here, before anything else derives a count or label from
+    # rtsa_data, keeps every later computation aligned with the same set of
+    # studies RTSA actually analyzes - and tells the user which studies (and
+    # why) rather than erroring opaquely or silently misaligning the table.
+    zero_event_excluded <- character(0)
+    if (outcome_type != "continuous" && sm %in% c("RR", "OR")) {
+      is_double_zero <- (rtsa_data$eI + rtsa_data$eC) == 0
+      if (any(is_double_zero)) {
+        zero_event_excluded <- rtsa_data$study[is_double_zero]
+        rtsa_data <- rtsa_data[!is_double_zero, , drop = FALSE]
+      }
+    }
+    if (nrow(rtsa_data) < 2) {
+      stop(paste0(
+        "After removing ", length(zero_event_excluded), " stud", if (length(zero_event_excluded) == 1) "y" else "ies",
+        " with zero events in both arms (required for ", sm, ", which cannot be computed from a double-zero study) - ",
+        paste(zero_event_excluded, collapse = ", "), " - fewer than 2 studies remain. ",
+        "Switch to Risk Difference (RD) to keep them, or add more studies with events."
+      ))
+    }
+
     # --- Expected effect (mc) ---------------------------------------------
     expected_effect_mode <- if (!is.null(cfg$expected_effect_mode)) cfg$expected_effect_mode else "observed"
     used_observed_effect <- expected_effect_mode == "observed"
@@ -379,6 +411,12 @@ function(req, res) {
       "The required information size has been reached and the cumulative Z-curve did not cross a monitoring boundary for benefit or harm."
     } else {
       "The cumulative Z-curve did not cross the monitoring boundaries and the required information size has not yet been reached."
+    }
+    if (length(zero_event_excluded) > 0) {
+      interpretation <- paste0(
+        "⚠️ Excluded from this analysis (zero events in both arms, undefined for ", sm, "): ",
+        paste(zero_event_excluded, collapse = ", "), ". ", interpretation
+      )
     }
 
     list(
